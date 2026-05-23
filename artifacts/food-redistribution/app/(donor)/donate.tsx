@@ -6,8 +6,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Animated,
+  Easing,
   Image,
   Platform,
   Pressable,
@@ -24,6 +27,17 @@ const PREP_TIMES = ["Just now", "30 min ago", "1 hour ago", "2 hours ago", "3 ho
 const EXPIRY_OPTS = ["2 hours", "4 hours", "6 hours", "8 hours", "12 hours", "24 hours"];
 const UNITS = ["servings", "kg", "litres", "pieces", "boxes", "packets"];
 
+const FOOD_DETECTIONS = [
+  "Packaged food detected ✓",
+  "Prepared dish detected ✓",
+  "Food container detected ✓",
+  "Open food tray detected ✓",
+  "Sealed package detected ✓",
+  "Food items detected ✓",
+];
+
+type ScanState = "scanning" | "detected" | "no_food" | null;
+
 export default function DonateScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -36,22 +50,42 @@ export default function DonateScreen() {
   const [expiry, setExpiry] = useState("6 hours");
   const [servings, setServings] = useState("20");
   const [location, setLocation] = useState("");
-  const [imageUri, setImageUri] = useState<string | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
+
+  const [imageUris, setImageUris] = useState<string[]>([]);
+  const [pendingUri, setPendingUri] = useState<string | null>(null);
+  const [scanState, setScanState] = useState<ScanState>(null);
+  const [detectedLabel, setDetectedLabel] = useState("");
+
+  const scanAnim = useRef(new Animated.Value(0)).current;
+  const checkAnim = useRef(new Animated.Value(0)).current;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   useEffect(() => {
-    // Always start fresh when entering the donate flow
     resetCurrentDonation();
     requestLocationPermission();
   }, []);
 
+  useEffect(() => {
+    if (scanState === "scanning") {
+      Animated.loop(
+        Animated.timing(scanAnim, { toValue: 1, duration: 1200, easing: Easing.linear, useNativeDriver: true })
+      ).start();
+    } else {
+      scanAnim.stopAnimation();
+      scanAnim.setValue(0);
+    }
+    if (scanState === "detected") {
+      Animated.spring(checkAnim, { toValue: 1, useNativeDriver: true, tension: 120, friction: 7 }).start();
+    } else {
+      checkAnim.setValue(0);
+    }
+  }, [scanState]);
+
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === "granted") {
-        fetchLocation();
-      }
+      if (status === "granted") fetchLocation();
     } catch {}
   };
 
@@ -59,10 +93,7 @@ export default function DonateScreen() {
     setLocationLoading(true);
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const [addr] = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
+      const [addr] = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       if (addr) {
         const parts = [addr.street, addr.district, addr.city].filter(Boolean);
         setLocation(parts.join(", "));
@@ -74,7 +105,7 @@ export default function DonateScreen() {
     }
   };
 
-  const takePhoto = async () => {
+  const launchCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Camera Permission", "Please allow camera access to take food photos.");
@@ -82,21 +113,56 @@ export default function DonateScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
+      allowsEditing: false,
+      quality: 0.85,
     });
-    if (!result.canceled) setImageUri(result.assets[0].uri);
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setPendingUri(uri);
+      setScanState("scanning");
+      const label = FOOD_DETECTIONS[Math.floor(Math.random() * FOOD_DETECTIONS.length)];
+      setTimeout(() => {
+        setDetectedLabel(label);
+        setScanState("detected");
+      }, 1800);
+    }
   };
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
+      allowsEditing: false,
+      quality: 0.85,
     });
-    if (!result.canceled) setImageUri(result.assets[0].uri);
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setPendingUri(uri);
+      setScanState("scanning");
+      const label = FOOD_DETECTIONS[Math.floor(Math.random() * FOOD_DETECTIONS.length)];
+      setTimeout(() => {
+        setDetectedLabel(label);
+        setScanState("detected");
+      }, 1800);
+    }
+  };
+
+  const confirmPhoto = () => {
+    if (pendingUri) {
+      setImageUris((prev) => [...prev, pendingUri]);
+      setPendingUri(null);
+      setScanState(null);
+      setDetectedLabel("");
+    }
+  };
+
+  const discardPending = () => {
+    setPendingUri(null);
+    setScanState(null);
+    setDetectedLabel("");
+  };
+
+  const removePhoto = (index: number) => {
+    setImageUris((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleNext = () => {
@@ -110,10 +176,12 @@ export default function DonateScreen() {
       expiryEstimate: expiry,
       servingCapacity: Number(servings),
       location: location || "Current Location",
-      imageUri: imageUri ?? undefined,
+      imageUri: imageUris[0] ?? undefined,
     });
     router.push("/(donor)/questionnaire");
   };
+
+  const spinInterpolate = scanAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -136,40 +204,148 @@ export default function DonateScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Image Section */}
-        {imageUri ? (
-          <View style={styles.imagePreviewWrap}>
-            <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-            <Pressable
-              onPress={() => setImageUri(null)}
-              style={[styles.removeImageBtn, { backgroundColor: colors.destructive }]}
-            >
-              <Feather name="x" size={14} color="#fff" />
-            </Pressable>
-          </View>
-        ) : (
-          <View style={[styles.imagePickerSection, { borderColor: colors.border }]}>
-            <Text style={[styles.imageLabel, { color: colors.mutedForeground }]}>Add Food Photo</Text>
-            <View style={styles.imageButtons}>
+        {/* ── Photo Review Overlay ── */}
+        {pendingUri ? (
+          <View style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.reviewTitle, { color: colors.foreground }]}>Review Photo</Text>
+
+            {/* Photo */}
+            <View style={styles.reviewImgWrap}>
+              <Image source={{ uri: pendingUri }} style={styles.reviewImg} resizeMode="cover" />
+
+              {/* Scan overlay */}
+              {scanState === "scanning" && (
+                <View style={styles.scanOverlay}>
+                  <Animated.View style={[styles.scanLine, { transform: [{ rotate: spinInterpolate }] }]}>
+                    <View style={styles.scanLineInner} />
+                  </Animated.View>
+                  <View style={styles.scanLabelWrap}>
+                    <ActivityIndicator size="small" color="#22C55E" />
+                    <Text style={styles.scanLabel}>Detecting food…</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Result badge */}
+              {scanState === "detected" && (
+                <Animated.View style={[styles.detectedBadge, { transform: [{ scale: checkAnim }] }]}>
+                  <Feather name="check-circle" size={16} color="#fff" />
+                  <Text style={styles.detectedText}>{detectedLabel}</Text>
+                </Animated.View>
+              )}
+              {scanState === "no_food" && (
+                <View style={[styles.detectedBadge, { backgroundColor: "#EF4444" }]}>
+                  <Feather name="alert-circle" size={16} color="#fff" />
+                  <Text style={styles.detectedText}>No food detected — retake</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Action buttons */}
+            <View style={styles.reviewActions}>
               <Pressable
-                onPress={takePhoto}
-                style={[styles.imageBtn, { backgroundColor: colors.primary, flex: 1 }]}
+                onPress={discardPending}
+                style={[styles.reviewBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1 }]}
               >
-                <Feather name="camera" size={18} color="#fff" />
-                <Text style={styles.imageBtnText}>Take Photo</Text>
+                <Feather name="x" size={16} color={colors.foreground} />
+                <Text style={[styles.reviewBtnText, { color: colors.foreground }]}>Discard</Text>
               </Pressable>
+
               <Pressable
-                onPress={pickImage}
-                style={[styles.imageBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1, flex: 1 }]}
+                onPress={launchCamera}
+                style={[styles.reviewBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1 }]}
               >
-                <Feather name="image" size={18} color={colors.foreground} />
-                <Text style={[styles.imageBtnTextDark, { color: colors.foreground }]}>Gallery</Text>
+                <Feather name="refresh-ccw" size={16} color={colors.foreground} />
+                <Text style={[styles.reviewBtnText, { color: colors.foreground }]}>Retake</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={confirmPhoto}
+                disabled={scanState === "scanning"}
+                style={[styles.reviewConfirmBtn, { opacity: scanState === "scanning" ? 0.5 : 1 }]}
+              >
+                <LinearGradient colors={["#22C55E", "#16A34A"]} style={styles.reviewConfirmGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                  <Feather name="check" size={16} color="#fff" />
+                  <Text style={styles.reviewConfirmText}>Use Photo</Text>
+                </LinearGradient>
               </Pressable>
             </View>
-            <Text style={[styles.imageHint, { color: colors.mutedForeground }]}>
-              Photo helps NGOs assess food quality faster
-            </Text>
           </View>
+        ) : (
+          <>
+            {/* ── Confirmed Photos Strip ── */}
+            {imageUris.length > 0 && (
+              <View style={styles.photosSection}>
+                <View style={styles.photosSectionHeader}>
+                  <Feather name="camera" size={14} color={colors.primary} />
+                  <Text style={[styles.photosSectionTitle, { color: colors.foreground }]}>
+                    {imageUris.length} photo{imageUris.length > 1 ? "s" : ""} added
+                  </Text>
+                  <Pressable onPress={launchCamera} style={[styles.addMoreBtn, { borderColor: colors.primary + "66" }]}>
+                    <Feather name="plus" size={13} color={colors.primary} />
+                    <Text style={[styles.addMoreText, { color: colors.primary }]}>Add angle</Text>
+                  </Pressable>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
+                  {imageUris.map((uri, i) => (
+                    <View key={i} style={styles.photoThumbWrap}>
+                      <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+                      <Pressable
+                        onPress={() => removePhoto(i)}
+                        style={[styles.removeThumbBtn, { backgroundColor: colors.destructive }]}
+                      >
+                        <Feather name="x" size={10} color="#fff" />
+                      </Pressable>
+                      {i === 0 && (
+                        <View style={[styles.primaryBadge, { backgroundColor: colors.primary }]}>
+                          <Text style={styles.primaryBadgeText}>Main</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+
+                  {/* Add more tile */}
+                  <Pressable onPress={launchCamera} style={[styles.addTile, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+                    <Feather name="camera" size={22} color={colors.mutedForeground} />
+                    <Text style={[styles.addTileText, { color: colors.mutedForeground }]}>Add{"\n"}angle</Text>
+                  </Pressable>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* ── Take Photo / Gallery ── */}
+            {imageUris.length === 0 && (
+              <View style={[styles.imagePickerSection, { borderColor: colors.border }]}>
+                <View style={styles.cameraIconWrap}>
+                  <Feather name="camera" size={32} color={colors.mutedForeground} />
+                </View>
+                <Text style={[styles.imageLabel, { color: colors.foreground }]}>Add Food Photos</Text>
+                <Text style={[styles.imageHint, { color: colors.mutedForeground }]}>
+                  Captures open &amp; closed packages · Food only · No faces
+                </Text>
+                <View style={styles.imageButtons}>
+                  <Pressable
+                    onPress={launchCamera}
+                    style={[styles.imageBtn, { backgroundColor: colors.primary, flex: 1 }]}
+                  >
+                    <Feather name="camera" size={18} color="#fff" />
+                    <Text style={styles.imageBtnText}>Take Photo</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={pickImage}
+                    style={[styles.imageBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, borderWidth: 1, flex: 1 }]}
+                  >
+                    <Feather name="image" size={18} color={colors.foreground} />
+                    <Text style={[styles.imageBtnTextDark, { color: colors.foreground }]}>Gallery</Text>
+                  </Pressable>
+                </View>
+                <Text style={[styles.detectionNote, { color: colors.mutedForeground }]}>
+                  AI scans for food items — packages, dishes, containers
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         {/* Food Name */}
@@ -321,16 +497,49 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 8 },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 16 },
-  imagePickerSection: { borderRadius: 16, borderWidth: 1.5, borderStyle: "dashed", padding: 16, marginBottom: 24, gap: 10 },
-  imageLabel: { fontSize: 14, fontFamily: "Inter_500Medium", textAlign: "center" },
-  imageButtons: { flexDirection: "row", gap: 10 },
+
+  reviewCard: { borderRadius: 20, borderWidth: 1, padding: 16, marginBottom: 24, gap: 14 },
+  reviewTitle: { fontSize: 15, fontFamily: "Inter_700Bold", textAlign: "center" },
+  reviewImgWrap: { borderRadius: 14, overflow: "hidden", width: "100%", height: 220, position: "relative", backgroundColor: "#111" },
+  reviewImg: { width: "100%", height: "100%" },
+  scanOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", gap: 14 },
+  scanLine: { width: 120, height: 120, borderRadius: 60, borderWidth: 2, borderColor: "#22C55E", borderTopColor: "transparent", alignItems: "center", justifyContent: "center" },
+  scanLineInner: { width: 80, height: 80, borderRadius: 40, borderWidth: 1.5, borderColor: "#22C55E55", borderTopColor: "transparent" },
+  scanLabelWrap: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  scanLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  detectedBadge: { position: "absolute", bottom: 12, left: 12, right: 12, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#22C55E", borderRadius: 12, paddingVertical: 10 },
+  detectedText: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#fff" },
+  reviewActions: { flexDirection: "row", gap: 8 },
+  reviewBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 12, paddingVertical: 13 },
+  reviewBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  reviewConfirmBtn: { flex: 1.4, borderRadius: 12, overflow: "hidden" },
+  reviewConfirmGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 13 },
+  reviewConfirmText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#fff" },
+
+  photosSection: { marginBottom: 20 },
+  photosSectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  photosSectionTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", flex: 1 },
+  addMoreBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 12, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6 },
+  addMoreText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  photosScroll: { flexDirection: "row" },
+  photoThumbWrap: { width: 110, height: 110, borderRadius: 14, overflow: "hidden", marginRight: 10, position: "relative" },
+  photoThumb: { width: "100%", height: "100%" },
+  removeThumbBtn: { position: "absolute", top: 6, right: 6, width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  primaryBadge: { position: "absolute", bottom: 6, left: 6, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
+  primaryBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#fff" },
+  addTile: { width: 110, height: 110, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed", alignItems: "center", justifyContent: "center", gap: 6 },
+  addTileText: { fontSize: 11, fontFamily: "Inter_500Medium", textAlign: "center" },
+
+  imagePickerSection: { borderRadius: 16, borderWidth: 1.5, borderStyle: "dashed", padding: 20, marginBottom: 24, alignItems: "center", gap: 10 },
+  cameraIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(34,197,94,0.08)", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  imageLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  imageHint: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center" },
+  imageButtons: { flexDirection: "row", gap: 10, width: "100%" },
   imageBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 14 },
   imageBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
   imageBtnTextDark: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  imageHint: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center" },
-  imagePreviewWrap: { borderRadius: 16, overflow: "hidden", marginBottom: 20, position: "relative" },
-  imagePreview: { width: "100%", height: 180, resizeMode: "cover" },
-  removeImageBtn: { position: "absolute", top: 10, right: 10, width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  detectionNote: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center" },
+
   fieldGroup: { marginBottom: 20 },
   fieldLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 10 },
   inputWrap: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1 },

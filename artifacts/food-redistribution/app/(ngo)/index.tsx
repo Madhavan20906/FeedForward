@@ -1,10 +1,13 @@
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { NGO_REQUESTS } from "@/data/mockData";
+import NGOMap from "@/components/NGOMap";
+import { generateNearbyNGOs } from "@/utils/generateNGOs";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -15,7 +18,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const URGENCY_COLORS: Record<string, string> = { high: "#EF4444", medium: "#F59E0B", low: "#22C55E", critical: "#DC2626" };
+const URGENCY_COLORS: Record<string, string> = {
+  high: "#EF4444",
+  medium: "#F59E0B",
+  low: "#22C55E",
+  critical: "#DC2626",
+};
+
+const DEFAULT_LAT = 13.0478;
+const DEFAULT_LNG = 80.2089;
 
 export default function NGOHomeScreen() {
   const colors = useColors();
@@ -24,7 +35,29 @@ export default function NGOHomeScreen() {
   const [activeTab, setActiveTab] = useState<"pending" | "accepted">("pending");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const pending = NGO_REQUESTS.filter(r => r.status === "pending");
+  const [userCoords, setUserCoords] = useState({ latitude: DEFAULT_LAT, longitude: DEFAULT_LNG });
+  const [nearbyNGOs, setNearbyNGOs] = useState(() => generateNearbyNGOs(DEFAULT_LAT, DEFAULT_LNG));
+  const [locationReady, setLocationReady] = useState(false);
+
+  useEffect(() => {
+    initLocation();
+  }, []);
+
+  const initLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const lat = loc.coords.latitude;
+        const lng = loc.coords.longitude;
+        setUserCoords({ latitude: lat, longitude: lng });
+        setNearbyNGOs(generateNearbyNGOs(lat, lng));
+      }
+    } catch {}
+    setLocationReady(true);
+  };
+
+  const pending = NGO_REQUESTS.filter((r) => r.status === "pending");
 
   return (
     <ScrollView
@@ -57,13 +90,51 @@ export default function NGOHomeScreen() {
             { label: "Today", value: "7", color: "#3B82F6" },
             { label: "Served", value: "840", color: "#22C55E" },
           ].map((stat) => (
-            <View key={stat.label} style={[styles.statPill, { backgroundColor: stat.color + "22", borderColor: stat.color + "44" }]}>
+            <View
+              key={stat.label}
+              style={[styles.statPill, { backgroundColor: stat.color + "22", borderColor: stat.color + "44" }]}
+            >
               <Text style={[styles.statPillValue, { color: stat.color }]}>{stat.value}</Text>
               <Text style={[styles.statPillLabel, { color: stat.color }]}>{stat.label}</Text>
             </View>
           ))}
         </View>
       </LinearGradient>
+
+      {/* ── Nearby NGOs Live Map ── */}
+      <View style={styles.mapSection}>
+        <View style={styles.mapSectionHeader}>
+          <Feather name="map-pin" size={15} color={colors.primary} />
+          <Text style={[styles.mapSectionTitle, { color: colors.foreground }]}>NGOs Near You</Text>
+          <Text style={[styles.mapSectionSub, { color: colors.mutedForeground }]}>
+            {nearbyNGOs.length} within 10 km
+          </Text>
+        </View>
+
+        <View style={styles.mapWrap}>
+          <NGOMap userCoords={userCoords} ngos={nearbyNGOs} />
+        </View>
+
+        {/* NGO quick-list below map */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ngoChipScroll}>
+          {nearbyNGOs.slice(0, 6).map((ngo) => (
+            <View
+              key={ngo.id}
+              style={[styles.ngoChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <View style={[styles.ngoChipDot, { backgroundColor: "#3B82F6" }]} />
+              <View>
+                <Text style={[styles.ngoChipName, { color: colors.foreground }]} numberOfLines={1}>
+                  {ngo.name.split(" ").slice(0, 3).join(" ")}
+                </Text>
+                <Text style={[styles.ngoChipDist, { color: colors.mutedForeground }]}>
+                  {ngo.distanceStr} · {ngo.responseTime}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
 
       <View style={styles.body}>
         {/* Tabs */}
@@ -74,7 +145,15 @@ export default function NGOHomeScreen() {
               onPress={() => setActiveTab(tab)}
               style={[styles.tab, activeTab === tab && { backgroundColor: colors.card }]}
             >
-              <Text style={[styles.tabText, { color: activeTab === tab ? colors.foreground : colors.mutedForeground, fontFamily: activeTab === tab ? "Inter_700Bold" : "Inter_400Regular" }]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  {
+                    color: activeTab === tab ? colors.foreground : colors.mutedForeground,
+                    fontFamily: activeTab === tab ? "Inter_700Bold" : "Inter_400Regular",
+                  },
+                ]}
+              >
                 {tab === "pending" ? `Pending (${pending.length})` : "Accepted"}
               </Text>
             </Pressable>
@@ -83,23 +162,33 @@ export default function NGOHomeScreen() {
 
         {/* Requests */}
         {activeTab === "pending" ? (
-          pending.map(req => (
+          pending.map((req) => (
             <Pressable
               key={req.id}
               onPress={() => router.push({ pathname: "/(ngo)/request", params: { id: req.id } })}
               style={[styles.requestCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
-              {/* Urgency indicator */}
               <View style={[styles.urgencyBar, { backgroundColor: URGENCY_COLORS[req.urgency] ?? "#F59E0B" }]} />
 
               <View style={styles.requestBody}>
                 <View style={styles.requestHeader}>
-                  <View style={[styles.donorTypeIcon, { backgroundColor: req.donorType === "Business" ? "#F97316" + "22" : colors.primary + "22" }]}>
-                    <Feather name={req.donorType === "Business" ? "briefcase" : "home"} size={16} color={req.donorType === "Business" ? "#F97316" : colors.primary} />
+                  <View
+                    style={[
+                      styles.donorTypeIcon,
+                      { backgroundColor: req.donorType === "Business" ? "#F97316" + "22" : colors.primary + "22" },
+                    ]}
+                  >
+                    <Feather
+                      name={req.donorType === "Business" ? "briefcase" : "home"}
+                      size={16}
+                      color={req.donorType === "Business" ? "#F97316" : colors.primary}
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.donorName, { color: colors.foreground }]}>{req.donorName}</Text>
-                    <Text style={[styles.donorType, { color: colors.mutedForeground }]}>{req.donorType} Donor · {req.createdAt}</Text>
+                    <Text style={[styles.donorType, { color: colors.mutedForeground }]}>
+                      {req.donorType} Donor · {req.createdAt}
+                    </Text>
                   </View>
                   <View style={[styles.urgencyBadge, { backgroundColor: URGENCY_COLORS[req.urgency] + "22" }]}>
                     <Text style={[styles.urgencyText, { color: URGENCY_COLORS[req.urgency] }]}>
@@ -109,7 +198,9 @@ export default function NGOHomeScreen() {
                 </View>
 
                 <Text style={[styles.foodName, { color: colors.foreground }]}>{req.foodName}</Text>
-                <Text style={[styles.foodMeta, { color: colors.mutedForeground }]}>{req.quantity} · {req.category}</Text>
+                <Text style={[styles.foodMeta, { color: colors.mutedForeground }]}>
+                  {req.quantity} · {req.category}
+                </Text>
 
                 <View style={styles.requestStats}>
                   <View style={styles.requestStat}>
@@ -135,7 +226,12 @@ export default function NGOHomeScreen() {
                     style={styles.acceptBtn}
                     onPress={() => router.push({ pathname: "/(ngo)/request", params: { id: req.id } })}
                   >
-                    <LinearGradient colors={["#3B82F6", "#2563EB"]} style={styles.acceptBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                    <LinearGradient
+                      colors={["#3B82F6", "#2563EB"]}
+                      style={styles.acceptBtnGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
                       <Feather name="check" size={16} color="#fff" />
                       <Text style={styles.acceptBtnText}>Review & Accept</Text>
                     </LinearGradient>
@@ -171,6 +267,18 @@ const styles = StyleSheet.create({
   statPill: { flex: 1, borderRadius: 12, borderWidth: 1, paddingVertical: 10, alignItems: "center", gap: 2 },
   statPillValue: { fontSize: 18, fontFamily: "Inter_700Bold" },
   statPillLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
+
+  mapSection: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 },
+  mapSectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  mapSectionTitle: { fontSize: 15, fontFamily: "Inter_700Bold", flex: 1 },
+  mapSectionSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  mapWrap: { borderRadius: 20, overflow: "hidden", marginBottom: 12 },
+  ngoChipScroll: { marginBottom: 4 },
+  ngoChip: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, marginRight: 10, maxWidth: 180 },
+  ngoChipDot: { width: 8, height: 8, borderRadius: 4 },
+  ngoChipName: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  ngoChipDist: { fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 1 },
+
   body: { paddingHorizontal: 16, paddingTop: 8 },
   tabs: { flexDirection: "row", borderRadius: 14, borderWidth: 1, padding: 4, marginBottom: 16 },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10 },
