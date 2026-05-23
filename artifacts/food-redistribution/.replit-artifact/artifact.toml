@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "AI Food Redistribution Platform"
+version = "1.0.0"
+id = "artifacts/food-redistribution"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 23713
+
+[services.development]
+run = "pnpm --filter @workspace/food-redistribution run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/food-redistribution", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/food-redistribution", "run", "serve" ]
+
+[services.env]
+PORT = "23713"
+BASE_PATH = "/"
