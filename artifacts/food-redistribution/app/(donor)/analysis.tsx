@@ -3,8 +3,8 @@ import { useApp } from "@/context/AppContext";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Platform,
@@ -98,11 +98,15 @@ export default function AnalysisScreen() {
   const analysis = computeAIAnalysis(currentDonation);
   const scoreColor = analysis.score >= 85 ? colors.primary : analysis.score >= 70 ? colors.warning : colors.destructive;
 
-  useEffect(() => {
-    setTimeout(() => {
-      Animated.timing(fadeIn, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    }, 400);
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      setAccepted(false);
+      fadeIn.setValue(0);
+      setTimeout(() => {
+        Animated.timing(fadeIn, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+      }, 400);
+    }, [])
+  );
 
   const handleAccept = () => {
     setCurrentDonation({ freshnessScore: analysis.score, urgency: analysis.urgency as never });

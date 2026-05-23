@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const BADGES = [
   { icon: "heart", label: "Community Hero", color: "#EF4444" },
-  { icon: "leaf", label: "Green Guardian", color: "#22C55E" },
+  { icon: "wind", label: "Green Guardian", color: "#22C55E" },
   { icon: "zap", label: "Impact Maker", color: "#F97316" },
 ];
 

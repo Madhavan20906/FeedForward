@@ -3,8 +3,8 @@ import { useApp } from "@/context/AppContext";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Platform,
@@ -73,6 +73,15 @@ export default function DeliveryScreen() {
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const checkingAnim = useRef(new Animated.Value(0)).current;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  useFocusEffect(
+    useCallback(() => {
+      setPhase("choose");
+      setSelectedRide(null);
+      checkingAnim.stopAnimation();
+      checkingAnim.setValue(0);
+    }, [])
+  );
 
   const ngoName = (currentDonation as Record<string, unknown>).selectedNGOName as string | undefined ?? "Akshaya Patra Foundation";
 

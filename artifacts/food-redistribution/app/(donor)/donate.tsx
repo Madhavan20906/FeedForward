@@ -6,7 +6,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   Animated,
@@ -61,10 +62,24 @@ export default function DonateScreen() {
   const checkAnim = useRef(new Animated.Value(0)).current;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  useEffect(() => {
-    resetCurrentDonation();
-    requestLocationPermission();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      setFoodName("");
+      setCategory("veg");
+      setQuantity("10");
+      setUnit("servings");
+      setPrepTime("1 hour ago");
+      setExpiry("6 hours");
+      setServings("20");
+      setLocation("");
+      setImageUris([]);
+      setPendingUri(null);
+      setScanState(null);
+      setDetectedLabel("");
+      resetCurrentDonation();
+      requestLocationPermission();
+    }, [])
+  );
 
   useEffect(() => {
     if (scanState === "scanning") {

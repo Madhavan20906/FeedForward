@@ -2,8 +2,8 @@ import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -37,7 +37,7 @@ const QUESTIONS = [
     context: "This helps match the right NGO dietary preferences and community requirements.",
     positiveLabel: "Yes, 100% vegetarian",
     negativeLabel: "Contains non-veg",
-    icon: "leaf" as const,
+    icon: "coffee" as const,
   },
   {
     id: "servings",
@@ -72,6 +72,13 @@ export default function QuestionnaireScreen() {
   const [answers, setAnswers] = useState<Record<string, boolean | null>>({});
   const [attempted, setAttempted] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnswers({});
+      setAttempted(false);
+    }, [])
+  );
 
   const allAnswered = QUESTIONS.every(q => answers[q.id] !== undefined && answers[q.id] !== null);
   const answeredCount = QUESTIONS.filter(q => answers[q.id] !== undefined && answers[q.id] !== null).length;

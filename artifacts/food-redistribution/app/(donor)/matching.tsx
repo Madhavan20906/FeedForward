@@ -5,8 +5,8 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -32,7 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 type Phase = "locating" | "searching" | "notifying" | "accepted" | "exhausted";
-const NOTIFY_TIMEOUT_MS = 8000;
+const NOTIFY_TIMEOUT_MS = 15000;
 const MAP_H = 220;
 const MAP_W = width - 40;
 
@@ -217,14 +217,16 @@ export default function MatchingScreen() {
     return () => loop.stop();
   }, []);
 
-  useEffect(() => {
-    getLocationAndGenerateNGOs();
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-      if (acceptTimerRef.current) clearTimeout(acceptTimerRef.current);
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      getLocationAndGenerateNGOs();
+      return () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        if (acceptTimerRef.current) clearTimeout(acceptTimerRef.current);
+      };
+    }, [])
+  );
 
   const getLocationAndGenerateNGOs = async () => {
     setPhase("locating");
@@ -275,10 +277,11 @@ export default function MatchingScreen() {
       setCountdown(prev => Math.max(0, prev - 1));
     }, 1000);
 
-    // Random acceptance: higher probability for closer NGOs, random delay 2-6s
-    const acceptChance = Math.max(0.25, 0.75 - index * 0.07);
-    const willAccept = Math.random() < acceptChance;
-    const acceptDelay = 2000 + Math.random() * 4000;
+    // Each NGO has ~45% chance of accepting, with a random delay spread across
+    // most of the 15s window so it's genuinely unpredictable which NGO ends up
+    // picking the donation (not always the first/nearest).
+    const willAccept = Math.random() < 0.45;
+    const acceptDelay = 3000 + Math.random() * 10000; // 3–13 s
 
     if (acceptTimerRef.current) clearTimeout(acceptTimerRef.current);
     if (willAccept) {
