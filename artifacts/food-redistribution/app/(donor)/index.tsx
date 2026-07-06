@@ -46,18 +46,25 @@ export default function DonorHomeScreen() {
     ]).start(() => router.push("/(donor)/donate"));
   };
 
-  // donations already includes mock data as initial state — no need to spread MOCK_DONATIONS again
   const recentDonations = donations.slice(0, 5);
-  const totalMeals = donations.filter(d => d.status === "delivered").reduce((sum, d) => sum + (d.mealsServed ?? d.servingCapacity), 0);
+  const totalMeals = donations
+    .filter(d => d.status === "delivered")
+    .reduce((sum, d) => sum + (d.mealsServed ?? d.servingCapacity), 0);
+
+  // Tab bar is 68px + system bottom inset
+  const bottomPad = insets.bottom + 90;
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: 120 }}
+      contentContainerStyle={{ paddingBottom: bottomPad }}
     >
       {/* Header */}
-      <LinearGradient colors={["#22C55E18", "#08080800"]} style={[styles.header, { paddingTop: topPad + 16 }]}>
+      <LinearGradient
+        colors={["#22C55E18", "#08080800"]}
+        style={[styles.header, { paddingTop: topPad + 16 }]}
+      >
         <View style={styles.headerRow}>
           <View>
             <Text style={[styles.greeting, { color: colors.mutedForeground }]}>Good afternoon,</Text>
@@ -70,9 +77,13 @@ export default function DonorHomeScreen() {
               <Feather name="bell" size={20} color={colors.foreground} />
               <View style={[styles.notifDot, { backgroundColor: colors.primary }]} />
             </Pressable>
-            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-              <Text style={styles.avatarText}>{(user?.name ?? "U")[0]}</Text>
-            </View>
+            {/* Avatar → tap to open Profile */}
+            <Pressable
+              onPress={() => router.push("/(donor)/profile")}
+              style={[styles.avatar, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.avatarText}>{(user?.name ?? "U")[0].toUpperCase()}</Text>
+            </Pressable>
           </View>
         </View>
         {isBusiness && (
@@ -106,7 +117,12 @@ export default function DonorHomeScreen() {
         {/* Donate CTA */}
         <Animated.View style={{ transform: [{ scale: donateScale }] }}>
           <Pressable onPress={pressDonate}>
-            <LinearGradient colors={["#22C55E", "#16A34A"]} style={styles.donateCta} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <LinearGradient
+              colors={["#22C55E", "#16A34A"]}
+              style={styles.donateCta}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
               <View>
                 <Text style={styles.ctaTitle}>Donate Food Now</Text>
                 <Text style={styles.ctaSubtitle}>
@@ -147,7 +163,9 @@ export default function DonorHomeScreen() {
         <View style={styles.recentSection}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Recent Donations</Text>
-            <Pressable><Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text></Pressable>
+            <Pressable onPress={() => router.push("/(donor)/history")}>
+              <Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text>
+            </Pressable>
           </View>
           {recentDonations.map((d, index) => (
             <View

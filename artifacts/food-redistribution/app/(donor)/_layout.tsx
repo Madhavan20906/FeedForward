@@ -1,3 +1,4 @@
+import { useColors } from "@/hooks/useColors";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
@@ -6,7 +7,7 @@ import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
-import { useColors } from "@/hooks/useColors";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function NativeTabLayout() {
   return (
@@ -34,9 +35,14 @@ function NativeTabLayout() {
 function ClassicTabLayout() {
   const colors = useColors();
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+
+  // Tab icons + labels = 68px. Add system bottom inset so bar
+  // extends behind Android's home/back/recents row.
+  const tabBarHeight = isWeb ? 84 : 68 + insets.bottom;
 
   return (
     <Tabs
@@ -49,7 +55,8 @@ function ClassicTabLayout() {
           backgroundColor: isIOS ? "transparent" : colors.background,
           borderTopWidth: 0,
           elevation: 0,
-          height: isWeb ? 84 : 68,
+          height: tabBarHeight,
+          paddingBottom: insets.bottom,
         },
         tabBarBackground: () =>
           isIOS ? (
@@ -58,10 +65,17 @@ function ClassicTabLayout() {
               tint={isDark ? "dark" : "light"}
               style={StyleSheet.absoluteFill}
             />
-          ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.border }]} />
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.border }]} />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: colors.background,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                },
+              ]}
+            />
           ),
       }}
     >
