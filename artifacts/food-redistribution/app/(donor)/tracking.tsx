@@ -6,7 +6,8 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   Animated,
   Platform,
@@ -44,9 +45,33 @@ export default function TrackingScreen() {
   const progressAnim = useRef(new Animated.Value(0)).current;
   const isDelivered = stepIndex >= STATUSES.length - 1;
 
-  useEffect(() => {
-    initMap();
-  }, []);
+  // Refs for cleanup
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMounted = useRef(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      isMounted.current = true;
+      setStepIndex(0);
+      setRoute([]);
+      setRiderRouteIndex(0);
+      progressAnim.setValue(0);
+      setUserCoords({ latitude: 13.0478, longitude: 80.2089 });
+      setNgoCoords({ latitude: 13.0628, longitude: 80.2219 });
+      setRiderCoords({ latitude: 13.0478, longitude: 80.2089 });
+
+      initMap();
+
+      return () => {
+        isMounted.current = false;
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        progressAnim.stopAnimation();
+      };
+    }, [])
+  );
 
   const initMap = async () => {
     let lat = 13.0478, lng = 80.2089;
@@ -58,6 +83,8 @@ export default function TrackingScreen() {
         lng = loc.coords.longitude;
       }
     } catch {}
+
+    if (!isMounted.current) return;
 
     const cd = currentDonation as Record<string, unknown>;
     const ngoLat = (cd.selectedNGOLat as number | undefined) ?? lat + 0.016;
@@ -75,9 +102,19 @@ export default function TrackingScreen() {
   };
 
   const startTracking = (waypoints: { latitude: number; longitude: number }[]) => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     const totalSteps = STATUSES.length - 1;
     let step = 0;
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
+      if (!isMounted.current) {
+        clearInterval(intervalRef.current!);
+        intervalRef.current = null;
+        return;
+      }
       step++;
       setStepIndex(step);
       const wpIdx = Math.round((step / totalSteps) * (waypoints.length - 1));
@@ -91,7 +128,10 @@ export default function TrackingScreen() {
         useNativeDriver: false,
       }).start();
 
-      if (step >= totalSteps) clearInterval(interval);
+      if (step >= totalSteps) {
+        clearInterval(intervalRef.current!);
+        intervalRef.current = null;
+      }
     }, 4000);
   };
 
@@ -101,7 +141,6 @@ export default function TrackingScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
       <View style={[styles.navHeader, { paddingTop: topPad + 8, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(donor)')}>
           <Feather name="arrow-left" size={22} color={colors.foreground} />
@@ -118,7 +157,6 @@ export default function TrackingScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-        {/* Map */}
         <View style={styles.mapWrap}>
           <LiveMap
             progress={progressAnim}
@@ -133,7 +171,6 @@ export default function TrackingScreen() {
         </View>
 
         <View style={styles.body}>
-          {/* Status card */}
           <View style={[styles.statusCard, {
             backgroundColor: isDelivered ? colors.primary : colors.card,
             borderColor: isDelivered ? colors.primary : colors.border,
@@ -151,7 +188,6 @@ export default function TrackingScreen() {
             </Text>
           </View>
 
-          {/* Progress bar */}
           <View style={[styles.trackBar, { backgroundColor: colors.border }]}>
             <Animated.View style={[styles.trackProgress, {
               backgroundColor: colors.primary,
@@ -159,7 +195,6 @@ export default function TrackingScreen() {
             }]} />
           </View>
 
-          {/* Rider card */}
           <View style={[styles.riderCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.riderAvatar, { backgroundColor: "#F97316" + "22" }]}>
               <Text style={{ fontSize: 22 }}>🏍️</Text>
@@ -179,7 +214,6 @@ export default function TrackingScreen() {
             </Pressable>
           </View>
 
-          {/* Destination */}
           <View style={[styles.destCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.destIcon, { backgroundColor: "#3B82F622" }]}>
               <Feather name="map-pin" size={18} color="#3B82F6" />
@@ -190,7 +224,6 @@ export default function TrackingScreen() {
             </View>
           </View>
 
-          {/* Timeline */}
           <Text style={[styles.timelineTitle, { color: colors.foreground }]}>Journey Timeline</Text>
           <View style={styles.timeline}>
             {STATUSES.map((s, i) => {

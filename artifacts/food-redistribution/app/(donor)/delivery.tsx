@@ -4,7 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Animated,
   Platform,
@@ -19,50 +19,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 type Phase = "choose" | "checking_ngo" | "ngo_found" | "ngo_unavailable" | "choose_ride";
 
 const RIDE_OPTIONS = [
-  {
-    id: "rapido",
-    name: "Rapido Bike",
-    tagline: "Fastest, affordable bike delivery",
-    icon: "zap" as const,
-    color: "#FFD600",
-    textColor: "#000",
-    eta: "8–12 min",
-    price: "₹35–55",
-    tag: "Cheapest",
-  },
-  {
-    id: "ola_auto",
-    name: "Ola Auto",
-    tagline: "Comfortable auto-rickshaw",
-    icon: "navigation" as const,
-    color: "#4CAF50",
-    textColor: "#fff",
-    eta: "10–16 min",
-    price: "₹55–80",
-    tag: "Popular",
-  },
-  {
-    id: "uber_go",
-    name: "Uber Go",
-    tagline: "Reliable cab for bulky donations",
-    icon: "truck" as const,
-    color: "#000000",
-    textColor: "#fff",
-    eta: "12–18 min",
-    price: "₹80–120",
-    tag: "Most Space",
-  },
-  {
-    id: "namma_yatri",
-    name: "Namma Yatri",
-    tagline: "Local auto — zero commission",
-    icon: "map-pin" as const,
-    color: "#F97316",
-    textColor: "#fff",
-    eta: "10–15 min",
-    price: "₹45–70",
-    tag: "Local",
-  },
+  { id: "rapido", name: "Rapido Bike", tagline: "Fastest, affordable bike delivery", icon: "zap" as const, color: "#FFD600", textColor: "#000", eta: "8–12 min", price: "₹35–55", tag: "Cheapest" },
+  { id: "ola_auto", name: "Ola Auto", tagline: "Comfortable auto-rickshaw", icon: "navigation" as const, color: "#4CAF50", textColor: "#fff", eta: "10–16 min", price: "₹55–80", tag: "Popular" },
+  { id: "uber_go", name: "Uber Go", tagline: "Reliable cab for bulky donations", icon: "truck" as const, color: "#000000", textColor: "#fff", eta: "12–18 min", price: "₹80–120", tag: "Most Space" },
+  { id: "namma_yatri", name: "Namma Yatri", tagline: "Local auto — zero commission", icon: "map-pin" as const, color: "#F97316", textColor: "#fff", eta: "10–15 min", price: "₹45–70", tag: "Local" },
 ];
 
 export default function DeliveryScreen() {
@@ -74,12 +34,35 @@ export default function DeliveryScreen() {
   const checkingAnim = useRef(new Animated.Value(0)).current;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const isFocused = useRef(true);
+
+  const clearAllTimers = () => {
+    timerRefs.current.forEach(clearTimeout);
+    timerRefs.current = [];
+  };
+
+  const scheduleTimer = (fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timerRefs.current = timerRefs.current.filter(t => t !== id);
+      if (isFocused.current) fn();
+    }, ms);
+    timerRefs.current.push(id);
+    return id;
+  };
+
   useFocusEffect(
     useCallback(() => {
+      isFocused.current = true;
       setPhase("choose");
       setSelectedRide(null);
       checkingAnim.stopAnimation();
       checkingAnim.setValue(0);
+      return () => {
+        isFocused.current = false;
+        clearAllTimers();
+        checkingAnim.stopAnimation();
+      };
     }, [])
   );
 
@@ -87,18 +70,19 @@ export default function DeliveryScreen() {
 
   const handleNGOVolunteer = () => {
     setPhase("checking_ngo");
-    // Animate checking dots
     Animated.loop(
       Animated.timing(checkingAnim, { toValue: 1, duration: 800, useNativeDriver: true })
     ).start();
-    // Simulate check — 60% chance NGO has volunteer
-    setTimeout(() => {
+    scheduleTimer(() => {
       const hasVolunteer = Math.random() > 0.4;
       if (hasVolunteer) {
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setPhase("ngo_found");
         setCurrentDonation({ deliveryMethod: "ngo_volunteer" } as never);
-        setTimeout(() => router.push("/(donor)/tracking"), 2000);
+        scheduleTimer(() => {
+          checkingAnim.stopAnimation();
+          router.push("/(donor)/tracking");
+        }, 2000);
       } else {
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         setPhase("ngo_unavailable");
@@ -109,10 +93,10 @@ export default function DeliveryScreen() {
   const handleConfirmRide = () => {
     if (!selectedRide) return;
     setCurrentDonation({ deliveryMethod: selectedRide } as never);
+    clearAllTimers();
     router.push("/(donor)/tracking");
   };
 
-  // ── Phase: Checking NGO availability ──
   if (phase === "checking_ngo") {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
@@ -123,22 +107,16 @@ export default function DeliveryScreen() {
           </Animated.View>
         </View>
         <Text style={[styles.checkingTitle, { color: colors.foreground }]}>Checking Availability</Text>
-        <Text style={[styles.checkingSub, { color: colors.mutedForeground }]}>
-          Contacting {ngoName} for a volunteer rider...
-        </Text>
+        <Text style={[styles.checkingSub, { color: colors.mutedForeground }]}>Contacting {ngoName} for a volunteer rider...</Text>
         <View style={styles.dotsRow}>
           {[0, 1, 2].map(i => (
-            <Animated.View
-              key={i}
-              style={[styles.dot, { backgroundColor: colors.primary, opacity: checkingAnim.interpolate({ inputRange: [0, 0.33 * (i + 1), 1], outputRange: [0.3, 1, 0.3] }) }]}
-            />
+            <Animated.View key={i} style={[styles.dot, { backgroundColor: colors.primary, opacity: checkingAnim.interpolate({ inputRange: [0, 0.33 * (i + 1), 1], outputRange: [0.3, 1, 0.3] }) }]} />
           ))}
         </View>
       </View>
     );
   }
 
-  // ── Phase: NGO Volunteer Found ──
   if (phase === "ngo_found") {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
@@ -148,9 +126,7 @@ export default function DeliveryScreen() {
         </LinearGradient>
         <Text style={[styles.foundTitle, { color: colors.foreground }]}>Volunteer Assigned!</Text>
         <Text style={[styles.foundName, { color: colors.primary }]}>Ravi Kumar</Text>
-        <Text style={[styles.foundSub, { color: colors.mutedForeground }]}>
-          NGO volunteer rider from {ngoName}
-        </Text>
+        <Text style={[styles.foundSub, { color: colors.mutedForeground }]}>NGO volunteer rider from {ngoName}</Text>
         <View style={styles.riderStats}>
           <View style={[styles.riderStat, { backgroundColor: colors.primary + "22" }]}>
             <Feather name="star" size={14} color={colors.primary} />
@@ -166,7 +142,6 @@ export default function DeliveryScreen() {
     );
   }
 
-  // ── Phase: NGO Unavailable — show ride options ──
   if (phase === "ngo_unavailable" || phase === "choose_ride") {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -184,9 +159,7 @@ export default function DeliveryScreen() {
               <Feather name="alert-triangle" size={18} color="#F59E0B" />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.alertTitle, { color: colors.foreground }]}>No Volunteers Available</Text>
-                <Text style={[styles.alertSub, { color: colors.mutedForeground }]}>
-                  {ngoName} currently has no available riders. Book a ride to deliver your food.
-                </Text>
+                <Text style={[styles.alertSub, { color: colors.mutedForeground }]}>{ngoName} currently has no available riders. Book a ride to deliver your food.</Text>
               </View>
             </View>
           )}
@@ -194,22 +167,13 @@ export default function DeliveryScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
             {phase === "ngo_unavailable" ? "Book a Ride Instead" : "Choose Your Ride Service"}
           </Text>
-          <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>
-            Delivery cost will be reimbursed by TechCorp CSR sponsorship
-          </Text>
+          <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>Delivery cost will be reimbursed by TechCorp CSR sponsorship</Text>
 
           {RIDE_OPTIONS.map(opt => (
             <Pressable
               key={opt.id}
               onPress={() => setSelectedRide(opt.id)}
-              style={[
-                styles.rideCard,
-                {
-                  backgroundColor: selectedRide === opt.id ? colors.card : colors.surfaceElevated,
-                  borderColor: selectedRide === opt.id ? opt.color : colors.border,
-                  borderWidth: selectedRide === opt.id ? 2 : 1,
-                },
-              ]}
+              style={[styles.rideCard, { backgroundColor: selectedRide === opt.id ? colors.card : colors.surfaceElevated, borderColor: selectedRide === opt.id ? opt.color : colors.border, borderWidth: selectedRide === opt.id ? 2 : 1 }]}
             >
               <View style={[styles.rideBrand, { backgroundColor: opt.color }]}>
                 <Feather name={opt.icon} size={22} color={opt.textColor} />
@@ -242,19 +206,13 @@ export default function DeliveryScreen() {
           {selectedRide && (
             <View style={[styles.sponsorNote, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "44" }]}>
               <Feather name="award" size={14} color={colors.primary} />
-              <Text style={[styles.sponsorNoteText, { color: colors.primary }]}>
-                This ride is sponsored by TechCorp CSR — you pay ₹0
-              </Text>
+              <Text style={[styles.sponsorNoteText, { color: colors.primary }]}>This ride is sponsored by TechCorp CSR — you pay ₹0</Text>
             </View>
           )}
         </ScrollView>
 
         <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}>
-          <Pressable
-            onPress={handleConfirmRide}
-            style={[styles.confirmBtn, { opacity: selectedRide ? 1 : 0.5 }]}
-            disabled={!selectedRide}
-          >
+          <Pressable onPress={handleConfirmRide} style={[styles.confirmBtn, { opacity: selectedRide ? 1 : 0.5 }]} disabled={!selectedRide}>
             <LinearGradient colors={["#22C55E", "#16A34A"]} style={styles.confirmBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Feather name="navigation" size={20} color="#fff" />
               <Text style={styles.confirmBtnText}>Confirm & Track Live</Text>
@@ -265,7 +223,6 @@ export default function DeliveryScreen() {
     );
   }
 
-  // ── Phase: Choose delivery type ──
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.navHeader, { paddingTop: topPad + 8, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
@@ -281,7 +238,6 @@ export default function DeliveryScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 40 }]} showsVerticalScrollIndicator={false}>
-        {/* NGO info */}
         <View style={[styles.ngoInfo, { backgroundColor: colors.card, borderColor: colors.primary + "44", borderWidth: 1.5 }]}>
           <LinearGradient colors={["#22C55E22", "#16A34A08"]} style={StyleSheet.absoluteFillObject} />
           <View style={[styles.ngoInfoIcon, { backgroundColor: colors.primary + "33" }]}>
@@ -298,11 +254,8 @@ export default function DeliveryScreen() {
         </View>
 
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Who arranges delivery?</Text>
-        <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>
-          The NGO can send their own volunteer, or you can book a ride service
-        </Text>
+        <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>The NGO can send their own volunteer, or you can book a ride service</Text>
 
-        {/* Option 1: NGO Volunteer */}
         <Pressable onPress={handleNGOVolunteer} style={({ pressed }) => [styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.primary, borderWidth: 2, opacity: pressed ? 0.9 : 1 }]}>
           <LinearGradient colors={["#22C55E18", "#16A34A08"]} style={StyleSheet.absoluteFillObject} />
           <View style={[styles.choiceIcon, { backgroundColor: colors.primary }]}>
@@ -315,9 +268,7 @@ export default function DeliveryScreen() {
                 <Text style={[styles.choiceTagText, { color: colors.primary }]}>Free</Text>
               </View>
             </View>
-            <Text style={[styles.choiceSub, { color: colors.mutedForeground }]}>
-              {ngoName} sends their own trained volunteer rider
-            </Text>
+            <Text style={[styles.choiceSub, { color: colors.mutedForeground }]}>{ngoName} sends their own trained volunteer rider</Text>
             <View style={styles.choiceMeta}>
               <View style={styles.choiceMetaItem}>
                 <Feather name="clock" size={12} color={colors.mutedForeground} />
@@ -332,11 +283,7 @@ export default function DeliveryScreen() {
           <Feather name="chevron-right" size={20} color={colors.primary} />
         </Pressable>
 
-        {/* Option 2: Ride Service */}
-        <Pressable
-          onPress={() => setPhase("choose_ride")}
-          style={({ pressed }) => [styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5, opacity: pressed ? 0.9 : 1 }]}
-        >
+        <Pressable onPress={() => setPhase("choose_ride")} style={({ pressed }) => [styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1.5, opacity: pressed ? 0.9 : 1 }]}>
           <View style={[styles.choiceIcon, { backgroundColor: "#3B82F6" }]}>
             <Feather name="navigation" size={26} color="#fff" />
           </View>
@@ -347,16 +294,9 @@ export default function DeliveryScreen() {
                 <Text style={[styles.choiceTagText, { color: "#3B82F6" }]}>CSR Sponsored</Text>
               </View>
             </View>
-            <Text style={[styles.choiceSub, { color: colors.mutedForeground }]}>
-              Rapido, Ola, Uber or Namma Yatri — cost covered by sponsorship
-            </Text>
+            <Text style={[styles.choiceSub, { color: colors.mutedForeground }]}>Rapido, Ola, Uber or Namma Yatri — cost covered by sponsorship</Text>
             <View style={styles.rideIconsRow}>
-              {[
-                { color: "#FFD600", label: "R" },
-                { color: "#4CAF50", label: "O" },
-                { color: "#000000", label: "U" },
-                { color: "#F97316", label: "N" },
-              ].map(r => (
+              {[{ color: "#FFD600", label: "R" }, { color: "#4CAF50", label: "O" }, { color: "#000000", label: "U" }, { color: "#F97316", label: "N" }].map(r => (
                 <View key={r.label} style={[styles.rideIconPill, { backgroundColor: r.color }]}>
                   <Text style={[styles.rideIconPillText, { color: r.label === "R" ? "#000" : "#fff" }]}>{r.label}</Text>
                 </View>
@@ -368,9 +308,7 @@ export default function DeliveryScreen() {
 
         <View style={[styles.aiNote, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
           <Feather name="cpu" size={14} color={colors.primary} />
-          <Text style={[styles.aiNoteText, { color: colors.mutedForeground }]}>
-            AI Recommendation: NGO Volunteer is optimal — zero logistics cost maximises food impact
-          </Text>
+          <Text style={[styles.aiNoteText, { color: colors.mutedForeground }]}>AI Recommendation: NGO Volunteer is optimal — zero logistics cost maximises food impact</Text>
         </View>
       </ScrollView>
     </View>

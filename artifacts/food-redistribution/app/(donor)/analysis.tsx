@@ -71,13 +71,47 @@ function CircularProgress({ score, color }: { score: number; color: string }) {
 
 function computeAIAnalysis(donation: ReturnType<typeof useApp>["currentDonation"]) {
   const q = donation.questionnaire as Record<string, boolean> | undefined;
-  let score = 60;
-  if (q?.refrigerated) score += 15;
-  if (q?.untouched) score += 12;
-  if (donation.preparedAt?.includes("Just now")) score += 10;
-  else if (donation.preparedAt?.includes("30 min")) score += 8;
-  else if (donation.preparedAt?.includes("1 hour")) score += 5;
-  score = Math.min(score, 98);
+
+  // Genuine noise: last 2 digits of ms → −9 to +9 swing so identical answers still vary
+  const noise = ((Date.now() % 100) % 19) - 9;
+
+  // Base score
+  let score = 55 + noise;
+
+  // Q1: refrigeration — biggest safety signal
+  if (q?.refrigerated === true) score += 16;
+  else if (q?.refrigerated === false) score -= 6;
+
+  // Q2: untouched / not partially served
+  if (q?.untouched === true) score += 12;
+  else if (q?.untouched === false) score -= 4;
+
+  // Q3: vegetarian (lower contamination risk)
+  if (q?.vegetarian === true) score += 5;
+  else if (q?.vegetarian === false) score -= 1;
+
+  // Q4: can serve 50+ people
+  if (q?.servings === true) score += 4;
+
+  // Q5: urgent pickup
+  if (q?.urgentPickup === true) score += 3;
+  else if (q?.urgentPickup === false) score += 1;
+
+  // Q6: transport (self-deliver = higher care)
+  if (q?.transportNeeded === false) score += 4;
+
+  // Prep time
+  if (donation.preparedAt?.includes("Just now")) score += 9;
+  else if (donation.preparedAt?.includes("30 min")) score += 6;
+  else if (donation.preparedAt?.includes("1 hour")) score += 3;
+  else if (donation.preparedAt?.includes("2 hour")) score -= 1;
+  else if (donation.preparedAt?.includes("3 hour")) score -= 4;
+
+  // Expiry window
+  if (donation.expiryEstimate?.includes("2 hours")) score -= 5;
+  else if (donation.expiryEstimate?.includes("12 hours") || donation.expiryEstimate?.includes("24 hours")) score += 3;
+
+  score = Math.min(97, Math.max(42, Math.round(score)));
 
   const urgency = q?.urgentPickup ? "high" : score > 85 ? "medium" : "low";
   const pickupWindow = score > 90 ? 90 : score > 80 ? 120 : score > 70 ? 180 : 240;
@@ -92,20 +126,21 @@ export default function AnalysisScreen() {
   const insets = useSafeAreaInsets();
   const { currentDonation, setCurrentDonation } = useApp();
   const [accepted, setAccepted] = useState(false);
+  const [analysis, setAnalysis] = useState(() => computeAIAnalysis(currentDonation));
   const fadeIn = useRef(new Animated.Value(0)).current;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const analysis = computeAIAnalysis(currentDonation);
   const scoreColor = analysis.score >= 85 ? colors.primary : analysis.score >= 70 ? colors.warning : colors.destructive;
 
   useFocusEffect(
     useCallback(() => {
       setAccepted(false);
+      setAnalysis(computeAIAnalysis(currentDonation));
       fadeIn.setValue(0);
       setTimeout(() => {
         Animated.timing(fadeIn, { toValue: 1, duration: 600, useNativeDriver: true }).start();
       }, 400);
-    }, [])
+    }, [currentDonation])
   );
 
   const handleAccept = () => {
@@ -132,7 +167,6 @@ export default function AnalysisScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]} showsVerticalScrollIndicator={false}>
-        {/* AI Header */}
         <View style={[styles.aiHeader, { backgroundColor: colors.surfaceElevated, borderColor: colors.primary + "44" }]}>
           <View style={[styles.aiIcon, { backgroundColor: colors.primary + "22" }]}>
             <Feather name="cpu" size={20} color={colors.primary} />
@@ -148,7 +182,6 @@ export default function AnalysisScreen() {
           </View>
         </View>
 
-        {/* Score Ring */}
         <Animated.View style={[styles.scoreSection, { opacity: fadeIn }]}>
           <View style={styles.scoreRing}>
             <CircularProgress score={analysis.score} color={scoreColor} />
@@ -159,7 +192,6 @@ export default function AnalysisScreen() {
               </View>
             </View>
           </View>
-
           <Text style={[styles.scoreTitle, { color: colors.foreground }]}>
             {analysis.score >= 85 ? "Excellent Condition" : analysis.score >= 70 ? "Good Condition" : "Acceptable Condition"}
           </Text>
@@ -168,7 +200,6 @@ export default function AnalysisScreen() {
           </Text>
         </Animated.View>
 
-        {/* Analysis Cards */}
         <Animated.View style={[styles.cards, { opacity: fadeIn }]}>
           <View style={[styles.analysisCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.cardIconWrap, { backgroundColor: (urgencyColors as Record<string, string>)[analysis.urgency] + "22" }]}>
@@ -217,7 +248,6 @@ export default function AnalysisScreen() {
           </View>
         </Animated.View>
 
-        {/* Disclaimer */}
         <View style={[styles.disclaimer, { backgroundColor: colors.warning + "18", borderColor: colors.warning + "44" }]}>
           <Feather name="alert-triangle" size={14} color={colors.warning} />
           <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>
@@ -225,7 +255,6 @@ export default function AnalysisScreen() {
           </Text>
         </View>
 
-        {/* Acknowledgment */}
         <View style={[styles.ackCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
           <Feather name="file-text" size={16} color={colors.foreground} />
           <Text style={[styles.ackText, { color: colors.foreground }]}>
@@ -234,7 +263,6 @@ export default function AnalysisScreen() {
         </View>
       </ScrollView>
 
-      {/* Bottom Bar */}
       <View style={[styles.bottomBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}>
         <Pressable onPress={handleAccept} style={[styles.acceptBtn, { opacity: accepted ? 0.7 : 1 }]}>
           <LinearGradient colors={["#22C55E", "#16A34A"]} style={styles.acceptBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -249,18 +277,12 @@ export default function AnalysisScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  navHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
-  },
+  navHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1 },
   headerTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
   progressWrap: { height: 4 },
   progressBar: { height: 4, borderRadius: 2 },
   content: { paddingHorizontal: 20, paddingTop: 20 },
-  aiHeader: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 28,
-  },
+  aiHeader: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 28 },
   aiIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   aiTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   aiSubtitle: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
@@ -268,38 +290,22 @@ const styles = StyleSheet.create({
   aiBadgeText: { fontSize: 10, fontFamily: "Inter_700Bold" },
   scoreSection: { alignItems: "center", marginBottom: 28 },
   scoreRing: { position: "relative", alignItems: "center", justifyContent: "center" },
-  scoreCenter: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  scoreCenter: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   scoreNumber: { fontSize: 36, fontFamily: "Inter_700Bold" },
   scoreLabel: { fontSize: 13, fontFamily: "Inter_400Regular" },
   scoreTitle: { fontSize: 22, fontFamily: "Inter_700Bold", marginTop: 16, marginBottom: 6 },
   scoreDesc: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 22 },
   cards: { gap: 10, marginBottom: 20 },
-  analysisCard: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    borderRadius: 14, borderWidth: 1, padding: 16,
-  },
+  analysisCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 14, borderWidth: 1, padding: 16 },
   cardIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   cardLabel: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 3 },
   cardValue: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  disclaimer: {
-    flexDirection: "row", gap: 10, borderRadius: 12, borderWidth: 1,
-    padding: 12, marginBottom: 12, alignItems: "flex-start",
-  },
+  disclaimer: { flexDirection: "row", gap: 10, borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 12, alignItems: "flex-start" },
   disclaimerText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
-  ackCard: {
-    flexDirection: "row", gap: 10, borderRadius: 12, borderWidth: 1,
-    padding: 14, alignItems: "flex-start",
-  },
+  ackCard: { flexDirection: "row", gap: 10, borderRadius: 12, borderWidth: 1, padding: 14, alignItems: "flex-start" },
   ackText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
   bottomBar: { borderTopWidth: 1, paddingHorizontal: 20, paddingTop: 12 },
   acceptBtn: { borderRadius: 16, overflow: "hidden" },
-  acceptBtnGradient: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 10, paddingVertical: 18,
-  },
+  acceptBtnGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 18 },
   acceptBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#fff" },
 });
