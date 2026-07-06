@@ -19,6 +19,7 @@ export type ThemePreference = "system" | "light" | "dark";
 interface AppState {
   user: RegisteredUser | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   donations: Donation[];
   activeRole: UserRole;
   themePreference: ThemePreference;
@@ -72,6 +73,7 @@ const SEED_USERS: RegisteredUser[] = [
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<RegisteredUser | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [donations, setDonations] = useState<Donation[]>(MOCK_DONATIONS);
   const [activeRole, setActiveRole] = useState<UserRole>("individual_donor");
   const [themePreference, setThemePrefState] = useState<ThemePreference>("dark");
@@ -109,6 +111,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const lastLogin = await AsyncStorage.getItem(STORAGE_LAST_LOGIN_KEY);
         if (lastLogin) setSavedUsername(lastLogin);
       } catch {}
+      finally {
+        // Always mark loading done — whether session found or not
+        setIsLoading(false);
+      }
     };
     init();
   }, []);
@@ -214,8 +220,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      user, isAuthenticated, donations, activeRole, currentDonation, themePreference, savedUsername,
-      login, register, logout, setCurrentDonation, resetCurrentDonation, addDonation, switchRole, setThemePreference,
+      user, isAuthenticated, isLoading, donations, activeRole, currentDonation,
+      themePreference, savedUsername,
+      login, register, logout, setCurrentDonation, resetCurrentDonation,
+      addDonation, switchRole, setThemePreference,
     }}>
       {children}
     </AppContext.Provider>
