@@ -1,4 +1,3 @@
-import { useColors } from "@/hooks/useColors";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
@@ -8,6 +7,7 @@ import { SymbolView } from "expo-symbols";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColors } from "@/hooks/useColors";
 
 function NativeTabLayout() {
   return (
@@ -40,8 +40,7 @@ function ClassicTabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
-  // Tab icons + labels = 68px. Add system bottom inset so bar
-  // extends behind Android's home/back/recents row.
+  // Tab bar height accounts for Android system nav bar
   const tabBarHeight = isWeb ? 84 : 68 + insets.bottom;
 
   return (
@@ -79,6 +78,7 @@ function ClassicTabLayout() {
           ),
       }}
     >
+      {/* ── Main tab screens (tab bar visible) ── */}
       <Tabs.Screen
         name="index"
         options={{
@@ -127,14 +127,15 @@ function ClassicTabLayout() {
             ),
         }}
       />
-      {/* Flow screens — hidden from tab bar */}
-      <Tabs.Screen name="donate" options={{ href: null }} />
-      <Tabs.Screen name="questionnaire" options={{ href: null }} />
-      <Tabs.Screen name="analysis" options={{ href: null }} />
-      <Tabs.Screen name="matching" options={{ href: null }} />
-      <Tabs.Screen name="delivery" options={{ href: null }} />
-      <Tabs.Screen name="tracking" options={{ href: null }} />
-      <Tabs.Screen name="success" options={{ href: null }} />
+
+      {/* ── Flow screens — tab bar hidden so buttons are never covered ── */}
+      <Tabs.Screen name="donate"        options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="questionnaire" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="analysis"      options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="matching"      options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="delivery"      options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="tracking"      options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="success"       options={{ href: null, tabBarStyle: { display: "none" } }} />
     </Tabs>
   );
 }

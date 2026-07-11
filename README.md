@@ -89,7 +89,7 @@ Register → Donate Food → AI Freshness Analysis
 📦 Package Manager pnpm workspaces
 🏗️ API Server Express 5 + Drizzle ORM + PostgreSQL
 
----
+--
 
 ## 🚀 Getting Started
 
